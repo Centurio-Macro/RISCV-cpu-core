@@ -129,7 +129,7 @@
    
    
    // Assert these to end simulation (before Makerchip cycle limit).
-   *passed = 1'b0 with m4+tb() 
+   m4+tb() //*passed = 1'b0;  
    *failed = *cyc_cnt > M4_MAX_CYC;
    
    m4+rf(32, 32, $reset, $rd_en, $rd[4:0], $rd_data[31:0], $rs1_en, $rs1[4:0], $src1_value, $rs2_en, $rs2[4:0], $src2_value)
