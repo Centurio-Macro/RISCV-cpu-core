@@ -50,10 +50,14 @@
    // every instruction is 4 byte wide, so an instruction only starts every fourth address
    $next_pc[31:0] = $reset ? '0 : 
                     $taken_br ? $br_tgt_pc :
+                    $is_jal ? $br_tgt_pc :
+                    $is_jalr ? $jalr_tgt_pc :
                     $pc + 32'd4;
+                    
    $pc[31:0] = >>1$next_pc;
    // compute branch target as a relative byte offset         
    $br_tgt_pc[31:0]  = $pc + $imm;
+   $jalr_tgt_pc[31:0] = $src1_value + $imm;
    
    // Instruction-Memory Access
    `READONLY_MEM($pc, $$instr[31:0])
@@ -66,7 +70,7 @@
    $is_b_instr = $instr[6:2] ==  5'b11000;
    // U-Type: load immediate value and store inside destination register
    $is_u_instr = $instr[6:2] ==? 5'b0x101;
-   $is_j_instr = $instr[6:2] ==  5'b11000;
+   $is_j_instr = $instr[6:2] ==  5'b11011;
    
    // extract instruction fields
    $opcode[6:0] = $instr[6:0];
@@ -98,14 +102,14 @@
    $is_lui = $dec_bits ==? 11'bx_xxx_0110111; // load upper immediate
    $is_auipc = $dec_bits ==? 11'bx_xxx_0010111; // add upper immediate to pc
    $is_jal = $dec_bits ==? 11'bx_xxx_1101111; // jump and link (offset as immediate)
-   $is_jalr = $dec_bits ==? 11'bx_xxx_1100111; // jump and link register (offset to be calculated)
+   $is_jalr = $dec_bits ==? 11'bx_000_1100111; // jump and link register (offset to be calculated)
    $is_beq = $dec_bits ==? 11'bx_000_1100011; // branch equal
    $is_bne = $dec_bits ==? 11'bx_001_1100011; // branch not equal
    $is_blt = $dec_bits ==? 11'bx_100_1100011; // branch less than
    $is_bge = $dec_bits ==? 11'bx_101_1100011; // branch greater or equal
    $is_bltu = $dec_bits ==? 11'bx_110_1100011; // branch less than unsigned
    $is_bgeu = $dec_bits ==? 11'bx_111_1100011; // branch greater or equal unsigned
-   $is_load = $dec_bits ==? 11'bx_xxx_000011; // dont distinguish between indiviual load instructions
+   $is_load = $opcode ==? 7'b000_0011; // dont distinguish between indiviual load instructions
    $is_addi = $dec_bits ==? 11'bx_000_0010011; // add immediate
    $is_slti = $dec_bits ==? 11'bx_010_0010011; // set less than immediate
    $is_sltiu = $dec_bits ==? 11'bx_011_0010011; // set less than immediate unsigned
@@ -148,7 +152,7 @@
    $result[31:0] = $is_andi ? $src1_value & $imm :
                    $is_ori ? $src1_value | $imm :
                    $is_xori ? $src1_value ^ $imm :
-                   $is_addi ? $src1_value + $imm :
+                   ($is_addi || $is_load || $is_s_instr) ? $src1_value + $imm :
                    $is_slli ? $src1_value << $imm :
                    $is_srli ? $src1_value >> $imm :
                    $is_and ? $src1_value & $src2_value :
@@ -162,7 +166,7 @@
                    $is_sltiu ? $sltiu_rslt :
                    $is_lui ? {$imm[31:12], 12'b0} :
                    $is_auipc ? $pc + $imm :
-                   $is_jal ? $pc + 32'd4 :
+                   $is_jal ? $pc + 32'd4 : // store the sequentially next instruction before jump in destination register
                    $is_jalr ? $pc + 32'd4 :
                    $is_slt ? ( ($src1_value[31] == $src2_value[31]) ?
                                      $sltu_rslt :
@@ -173,8 +177,15 @@
                    $is_sra ? $sra_rslt[31:0] :
                    $is_srai ? $srai_rslt[31:0] :
                    32'b0; //default
-   // write back       
-   $rd_data[31:0] = $result;
+   // data memory access 
+   //load/read
+   $ld_en = $is_load;
+   $rd_data[31:0] = $is_load ? $ld_data : $result;
+   
+   // store/write
+   $st_en = $is_s_instr;
+   $st_data[31:0] = $src2_value;
+   
    
    
    
@@ -193,7 +204,7 @@
    *failed = *cyc_cnt > M4_MAX_CYC;
    
    m4+rf(32, 32, $reset, $rd_en, $rd[4:0], $rd_data[31:0], $rs1_en, $rs1[4:0], $src1_value, $rs2_en, $rs2[4:0], $src2_value)
-   //m4+dmem(32, 32, $reset, $addr[4:0], $wr_en, $wr_data[31:0], $rd_en, $rd_data)
+   m4+dmem(32, 32, $reset, $result[6:2], $st_en, $st_data[31:0], $ld_en, $ld_data)
    m4+cpu_viz()
 \SV
    endmodule
